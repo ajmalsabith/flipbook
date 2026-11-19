@@ -1,0 +1,214 @@
+// AM Flipbook database. SQLite today; every column type used here also exists
+// in MySQL, so moving later means changing `provider` and re-running migrate.
+// "Enum" columns are plain strings validated with zod in the server.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Admin {
+  id           Int        @id @default(autoincrement())
+  username     String     @unique
+  passwordHash String
+  /// Bumped on password change so older sessions stop working.
+  tokenVersion Int        @default(0)
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  auditLogs    AuditLog[]
+  decisions    Request[]
+}
+
+model Customer {
+  id               Int        @id @default(autoincrement())
+  username         String     @unique
+  passwordHash     String
+  name             String
+  /// Digits only, with country code, e.g. 919876543210
+  whatsapp         String
+  email            String?
+  planId           Int?
+  plan             Plan?      @relation(fields: [planId], references: [id])
+  /// Snapshot of the plan terms at approval time, so editing a plan later
+  /// does not change what an existing customer paid for.
+  planName         String?
+  /// none | active | expired (kept up to date by the daily job; checks use planExpiresAt)
+  planStatus       String     @default("none")
+  planStartsAt     DateTime?
+  planExpiresAt    DateTime?
+  /// null = unlimited
+  downloadsAllowed Int?
+  downloadsUsed    Int        @default(0)
+  watermark        Boolean    @default(false)
+  shareLinkDays    Int        @default(7)
+  disabled         Boolean    @default(false)
+  tokenVersion     Int        @default(0)
+  lastLoginAt      DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  flipbooks        Flipbook[]
+  requests         Request[]
+  downloads        DownloadEvent[]
+
+  @@index([whatsapp])
+}
+
+model Plan {
+  id            Int        @id @default(autoincrement())
+  /// Stable identifier used in URLs: instant | day | week | month
+  code          String     @unique
+  name          String
+  tagline       String     @default("")
+  /// subscription | instant
+  type          String
+  /// Whole rupees
+  price         Int
+  /// null = unlimited
+  downloadLimit Int?
+  /// Subscription length, or how long the one-time link works for instant plans
+  validityHours Int
+  shareLinkDays Int
+  watermark     Boolean    @default(false)
+  highlight     Boolean    @default(false)
+  active        Boolean    @default(true)
+  sortOrder     Int        @default(0)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  customers     Customer[]
+  requests      Request[]
+}
+
+/// A purchase request. Today payment happens on WhatsApp and an admin
+/// approves it; a payment gateway would fill paymentMethod/paymentRef and
+/// approve through the same fulfilRequest() service.
+model Request {
+  id            Int           @id @default(autoincrement())
+  code          String        @unique
+  /// new | renewal | instant
+  kind          String
+  /// pending | approved | rejected
+  status        String        @default("pending")
+  planId        Int
+  plan          Plan          @relation(fields: [planId], references: [id])
+  planName      String
+  price         Int
+  name          String
+  whatsapp      String
+  email         String?
+  customerId    Int?
+  customer      Customer?     @relation(fields: [customerId], references: [id])
+  flipbookId    String?
+  flipbook      Flipbook?     @relation(fields: [flipbookId], references: [id], onDelete: SetNull)
+  /// whatsapp_manual today; e.g. razorpay later
+  paymentMethod String        @default("whatsapp_manual")
+  /// UTR / transaction id
+  paymentRef    String?
+  note          String?
+  rejectReason  String?
+  visitorId     String?
+  ip            String?
+  decidedAt     DateTime?
+  decidedById   Int?
+  decidedBy     Admin?        @relation(fields: [decidedById], references: [id])
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  instantTokens InstantToken[]
+
+  @@index([status, createdAt])
+}
+
+model Flipbook {
+  id            String          @id @default(cuid())
+  slug          String          @unique
+  title         String
+  showCover     Boolean         @default(true)
+  pdfDownload   Boolean         @default(false)
+  pageCount     Int
+  pageWidth     Int
+  pageHeight    Int
+  /// JSON: [{ "clean": "x.webp", "marked": "y.webp", "w": 1400, "h": 1980 }]
+  pages         String
+  pdfFile       String?
+  pdfName       String?
+  ogFile        String?
+  ogMarkedFile  String?
+  /// Share link and preview use watermarked images
+  watermarked   Boolean         @default(true)
+  customerId    Int?
+  customer      Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  visitorId     String?
+  linkExpiresAt DateTime
+  disabled      Boolean         @default(false)
+  filesDeleted  Boolean         @default(false)
+  views         Int             @default(0)
+  downloads     Int             @default(0)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  requests      Request[]
+  downloadsLog  DownloadEvent[]
+  instantTokens InstantToken[]
+
+  @@index([visitorId])
+  @@index([customerId])
+  @@index([linkExpiresAt])
+}
+
+model DownloadEvent {
+  id          Int       @id @default(autoincrement())
+  flipbookId  String?
+  flipbook    Flipbook? @relation(fields: [flipbookId], references: [id], onDelete: SetNull)
+  customerId  Int?
+  customer    Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  visitorId   String?
+  ip          String?
+  /// free | plan | instant
+  kind        String
+  watermarked Boolean
+  createdAt   DateTime  @default(now())
+
+  @@index([visitorId, kind])
+  @@index([ip, createdAt])
+  @@index([createdAt])
+}
+
+model InstantToken {
+  id         Int       @id @default(autoincrement())
+  token      String    @unique
+  requestId  Int
+  request    Request   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  flipbookId String
+  flipbook   Flipbook  @relation(fields: [flipbookId], references: [id], onDelete: Cascade)
+  /// active | used | expired | revoked
+  status     String    @default("active")
+  expiresAt  DateTime
+  usedAt     DateTime?
+  usedIp     String?
+  createdAt  DateTime  @default(now())
+}
+
+model Setting {
+  key       String   @id
+  /// JSON encoded
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  adminId    Int?
+  admin      Admin?   @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  actor      String
+  action     String
+  targetType String?
+  targetId   String?
+  details    String?
+  ip         String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}

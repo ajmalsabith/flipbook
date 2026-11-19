@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 900" role="img" aria-label="amflipbook">
+  <title>amflipbook</title>
+  <defs>
+    <linearGradient id="amf-orange" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFAA00"/>
+      <stop offset="1" stop-color="#FF9A00"/>
+    </linearGradient>
+    <linearGradient id="amf-orange-shade" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#F07C00"/>
+      <stop offset="1" stop-color="#FF9800"/>
+    </linearGradient>
+    <linearGradient id="amf-red" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF6A00"/>
+      <stop offset="1" stop-color="#FF1608"/>
+    </linearGradient>
+    <linearGradient id="amf-blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0A6EFF"/>
+      <stop offset="1" stop-color="#0436E8"/>
+    </linearGradient>
+    <linearGradient id="amf-blue-shade" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0050F0" stop-opacity="0"/>
+      <stop offset="1" stop-color="#0028D0" stop-opacity=".75"/>
+    </linearGradient>
+    <linearGradient id="amf-green" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#00A05A"/>
+      <stop offset="1" stop-color="#008A4C"/>
+    </linearGradient>
+    <linearGradient id="amf-green-shade" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#005A30" stop-opacity=".95"/>
+      <stop offset="1" stop-color="#00A85A" stop-opacity=".35"/>
+    </linearGradient>
+    <clipPath id="amf-blue-clip">
+      <path d="M30 440Q30 425 45 425L253 425Q268 425 268 440A192 192 0 0 0 445 632Q460 632 460 647L460 855Q460 870 445 870A430 445 0 0 1 30 440Z"/>
+    </clipPath>
+    <clipPath id="amf-green-clip">
+      <path d="M530 425L600 425A220 220 0 0 1 820 645L820 858Q820 870 808 870L530 870Q518 870 518 858L518 437Q518 425 530 425Z"/>
+    </clipPath>
+  </defs>
+  <!-- top left: orange quarter -->
+  <path fill="url(#amf-orange)" d="M30 340A405 328 0 0 1 418 30Q435 30 435 47L435 341Q435 358 418 358L47 358Q30 358 30 340Z"/>
+  <path fill="url(#amf-orange-shade)" d="M170 358A265 278 0 0 1 435 80L435 341Q435 358 418 358Z"/>
+  <!-- top right: red circle -->
+  <circle cx="652" cy="195" r="165" fill="url(#amf-red)"/>
+  <!-- bottom left: blue quarter ring -->
+  <g clip-path="url(#amf-blue-clip)">
+    <rect x="20" y="420" width="450" height="460" fill="url(#amf-blue)"/>
+    <path fill="url(#amf-blue-shade)" d="M60 425L268 425A192 207 0 0 0 460 632L400 632C230 632 90 560 60 425Z"/>
+  </g>
+  <!-- bottom right: green leaf -->
+  <g clip-path="url(#amf-green-clip)">
+    <rect x="510" y="420" width="320" height="460" fill="url(#amf-green)"/>
+    <path fill="url(#amf-green-shade)" d="M518 430C650 520 730 680 730 875L510 875L510 430Z"/>
+  </g>
+</svg>

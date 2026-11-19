@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /dashboard
+Disallow: /login
+Disallow: /request/
+Disallow: /subscribe/
+Disallow: /d/
+Disallow: /v/
+Disallow: /api/
+
+Sitemap: https://amflipbook.amcloth.com/sitemap.xml

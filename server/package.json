@@ -1,0 +1,49 @@
+{
+  "name": "@am-flipbook/server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development tsx watch --clear-screen=false src/index.ts",
+    "build": "node scripts/prisma.mjs generate && tsup",
+    "start": "cross-env NODE_ENV=production node dist/index.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/prisma.mjs generate",
+    "db:migrate": "node scripts/prisma.mjs migrate deploy",
+    "db:migrate:dev": "node scripts/prisma.mjs migrate dev",
+    "db:seed": "tsx src/seed.ts",
+    "admin:reset-password": "tsx src/seed.ts --reset-admin-password"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "bcryptjs": "^3.0.2",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.5.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
+    "node-cron": "^3.0.3",
+    "page-flip": "2.0.7",
+    "sharp": "^0.34.5",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.9",
+    "@types/express": "^5.0.3",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^22.18.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/supertest": "^6.0.3",
+    "cross-env": "^10.0.0",
+    "prisma": "6.19.3",
+    "supertest": "^7.1.4",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.5",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

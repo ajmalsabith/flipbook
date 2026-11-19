@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply min-h-screen bg-white font-sans text-ink-800;
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500 ring-offset-2;
+  }
+  summary::-webkit-details-marker {
+    display: none;
+  }
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
+  }
+  .input {
+    @apply block w-full rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-[15px] text-ink-900 shadow-sm
+      placeholder:text-ink-400 transition focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100
+      disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-500;
+  }
+  .input-error {
+    @apply border-danger-600 focus:border-danger-600 focus:ring-danger-100;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-ink-700;
+  }
+  .card {
+    @apply rounded-2xl border border-ink-100 bg-white shadow-card;
+  }
+  .link {
+    @apply font-medium text-brand-600 underline-offset-4 hover:text-brand-700 hover:underline;
+  }
+}

@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+
+# Runtime data
+data/
+uploads/
+backups/
+server/test/.tmp/
+
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

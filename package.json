@@ -1,0 +1,28 @@
+{
+  "name": "am-flipbook",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AM Flipbook - turn PDFs into page-turning flipbooks, with manual WhatsApp payments.",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c blue,magenta \"npm:dev -w server\" \"npm:dev -w web\"",
+    "build": "npm run build -w web && npm run build -w server",
+    "start": "npm start -w server",
+    "test": "npm test -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "db:migrate": "npm run db:migrate -w server",
+    "db:migrate:dev": "npm run db:migrate:dev -w server",
+    "db:seed": "npm run db:seed -w server",
+    "admin:reset-password": "npm run admin:reset-password -w server",
+    "backup": "node scripts/backup.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
