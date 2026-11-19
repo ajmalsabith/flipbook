@@ -1,0 +1,16 @@
+# /etc/systemd/system/amflipbook.service
+# Same pattern as amcloth-api.service on this server. Keep ONE instance: the
+# in-memory rate limits and the daily job expect a single process.
+[Unit]
+Description=amflipbook (PDF to flipbook)
+After=network.target
+
+[Service]
+User=amflipbook
+WorkingDirectory=/var/www/amflipbook
+ExecStart=/usr/bin/node server/dist/index.js
+Restart=always
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

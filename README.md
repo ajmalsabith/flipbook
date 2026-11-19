@@ -51,7 +51,7 @@ Live site: <https://amflipbook.amcloth.com>
 ├── web/                    React 18 + Vite + Tailwind + React Router
 │   ├── public/brand/logo.svg   ← your logo
 │   └── src/maker/          PDF → page images in the browser (pdf.js)
-├── deploy/                 PM2 and Nginx config
+├── deploy/                 systemd service and Nginx config
 └── scripts/backup.mjs      nightly MongoDB (mongodump) + uploads backup
 ```
 
@@ -242,30 +242,32 @@ To add a gateway such as Razorpay later:
 
 ## Deploy to amflipbook.amcloth.com
 
-Target: **Ubuntu 22.04/24.04**, Nginx, PM2, Let's Encrypt.
+Live setup: the amcloth server (Ubuntu), next to the
+amCloth API. Same hosting method as amCloth: **Nginx + certbot + a systemd
+service** running as its own no-login user (no PM2). The server already has
+Node 22, Nginx, certbot, git and mongodump; nothing extra is installed.
+Fonts for the watermark text ship with the app (`dejavu-fonts-ttf`).
+
+| | |
+| --- | --- |
+| Code | `/var/www/amflipbook` (root-owned; `uploads/` and `backups/` owned by `amflipbook`) |
+| Service | `amflipbook.service` (user `amflipbook`), port **4100** (amCloth API uses 4000) |
+| Nginx | `/etc/nginx/sites-available/amflipbook` → `127.0.0.1:4100`, HTTPS by certbot |
+| Logs | `journalctl -u amflipbook -f` |
 
 ### 1. DNS
-Create an `A` record `amflipbook.amcloth.com` → your server's IP.
+`A` record `amflipbook` → the amcloth server's IP (same as `amcloth.com`).
 
-### 2. Server packages
+### 2. Get the code and configure
 ```bash
-sudo apt update
-sudo apt install -y nginx git fonts-dejavu-core   # fonts for watermark text
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs
-sudo npm install -g pm2
-```
-
-### 3. Get the code and configure
-```bash
-sudo mkdir -p /var/www/amflipbook && sudo chown $USER /var/www/amflipbook
-git clone <your-repo-url> /var/www/amflipbook
+git clone https://github.com/ajmalsabith/flipbook.git /var/www/amflipbook
 cd /var/www/amflipbook
 cp .env.example .env
 nano .env
 ```
 In `.env` set at least:
 ```
+PORT=4100
 PUBLIC_URL=https://amflipbook.amcloth.com
 DATABASE_URL=mongodb+srv://USER:PASSWORD@cluster.mongodb.net/amflipbook?retryWrites=true&w=majority
 JWT_SECRET=<random>
@@ -274,30 +276,34 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=<strong password>
 ADMIN_WHATSAPP=91XXXXXXXXXX
 ```
-Then `chmod 600 .env` (it holds the database password).
+In MongoDB Atlas → **Network Access**, the server's public IP must be
+allowed, or the app cannot connect.
 
-In MongoDB Atlas → **Network Access**, add the server's public IP, or the
-app cannot connect.
-
-### 4. Build and start
+### 3. Build, seed, service user
 ```bash
 npm ci
 npm run build
 npm run db:migrate
 npm run db:seed
-pm2 start deploy/ecosystem.config.cjs
-pm2 save
-pm2 startup          # run the command it prints, so the app starts on boot
+useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin amflipbook
+mkdir -p uploads backups && chown -R amflipbook:amflipbook uploads backups
+chown root:amflipbook .env && chmod 640 .env     # holds the database password
 ```
-Check: `curl http://127.0.0.1:4000/api/health` → `{"ok":true}`.
+
+### 4. systemd service
+```bash
+cp deploy/amflipbook.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now amflipbook
+curl http://127.0.0.1:4100/api/health      # {"ok":true}
+```
 
 ### 5. Nginx and HTTPS
 ```bash
-sudo cp deploy/nginx-amflipbook.conf /etc/nginx/sites-available/amflipbook
-sudo ln -s /etc/nginx/sites-available/amflipbook /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d amflipbook.amcloth.com --redirect
+cp deploy/nginx-amflipbook.conf /etc/nginx/sites-available/amflipbook
+ln -s /etc/nginx/sites-available/amflipbook /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+certbot --nginx -d amflipbook.amcloth.com --redirect
 ```
 Certbot renews the certificate automatically.
 
@@ -308,10 +314,10 @@ git pull
 npm ci
 npm run build
 npm run db:migrate
-pm2 reload amflipbook
+systemctl restart amflipbook
 ```
 
-Keep **one** PM2 instance (the in-memory rate limits and the daily job expect
+Run **one** instance only (the in-memory rate limits and the daily job expect
 a single process).
 
 ---
@@ -335,9 +341,9 @@ Nightly at 02:30 (`crontab -e`):
 ```
 Copy `backups/` off the server regularly (e.g. `rclone` to Google Drive or S3).
 
-**Restore:** `pm2 stop amflipbook`, then
+**Restore:** `systemctl stop amflipbook`, then
 `mongorestore --uri="<DATABASE_URL>" --archive=database.archive.gz --gzip --drop --nsInclude="amflipbook.*"`,
-extract `uploads.tar.gz` into the repo root, `pm2 start amflipbook`.
+extract `uploads.tar.gz` into the repo root, `chown -R amflipbook:amflipbook uploads`, `systemctl start amflipbook`.
 
 ---
 
@@ -375,7 +381,7 @@ database.
 - **Forgot the admin password** – put a new one in `ADMIN_PASSWORD` and run
   `npm run admin:reset-password`.
 - **Share links point to localhost** – `PUBLIC_URL` in `.env` is wrong; fix it
-  and `pm2 reload amflipbook`.
+  and `systemctl restart amflipbook`.
 - **WhatsApp preview not showing** – WhatsApp caches previews per URL; test
   with a new flipbook. The site must be reachable over HTTPS.
 
