@@ -2,7 +2,7 @@
 import type { CustomerInfo, FlipbookSummary, RequestKind, RequestStatus } from "./api";
 
 export type AdminPlan = {
-  id: number;
+  id: string;
   code: string;
   name: string;
   tagline: string;
@@ -18,7 +18,7 @@ export type AdminPlan = {
 };
 
 export type AdminRequestRow = {
-  id: number;
+  id: string;
   code: string;
   kind: RequestKind;
   status: RequestStatus;
@@ -32,7 +32,7 @@ export type AdminRequestRow = {
 
 export type AdminRequestDetail = {
   request: AdminRequestRow & {
-    planId: number;
+    planId: string;
     email: string | null;
     paymentMethod: string;
     paymentRef: string | null;
@@ -45,7 +45,7 @@ export type AdminRequestDetail = {
   matchingCustomers: CustomerInfo[];
   flipbook: FlipbookSummary | null;
   instantTokens: {
-    id: number;
+    id: string;
     status: string;
     expiresAt: string;
     usedAt: string | null;
@@ -81,7 +81,7 @@ export type AdminCustomerDetail = {
 
 export type AdminFlipbookRow = FlipbookSummary & {
   filesDeleted: boolean;
-  owner: { type: "customer"; id: number; username: string } | { type: "anonymous" };
+  owner: { type: "customer"; id: string; username: string } | { type: "anonymous" };
 };
 
 export type AdminStats = {
@@ -96,7 +96,7 @@ export type AdminStats = {
 };
 
 export type AuditRow = {
-  id: number;
+  id: string;
   actor: string;
   action: string;
   targetType: string | null;

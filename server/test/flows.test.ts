@@ -1,5 +1,5 @@
 // End-to-end API test of the whole customer journey against a real (test)
-// SQLite database: free downloads with watermark, the free limit, a WhatsApp
+// MongoDB database: free downloads with watermark, the free limit, a WhatsApp
 // subscription request, admin approval, customer login, clean downloads,
 // plan limits, expiry and renewal, instant one-time links and share-link expiry.
 
@@ -108,7 +108,7 @@ describe("free visitor → subscribe → customer", () => {
   });
 
   it("allows 5 free watermarked downloads, then refuses", async () => {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 4; i++) {
       const res = await download(visitor, book.id);
       expect(res.status).toBe(200);
       expect(res.headers["x-watermarked"]).toBe("1");
@@ -116,6 +116,9 @@ describe("free visitor → subscribe → customer", () => {
       expect(res.text).toContain("Made with");
       expect(res.text).toContain("St.PageFlip");
     }
+    // Several clicks at the same moment must not all get the last free slot.
+    const racing = await Promise.all([1, 2, 3].map(() => download(visitor, book.id)));
+    expect(racing.map((r) => r.status).sort()).toEqual([200, 403, 403]);
     const denied = await download(visitor, book.id);
     expect(denied.status).toBe(403);
     expect(denied.body.reason).toBe("free_limit");

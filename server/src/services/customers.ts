@@ -1,6 +1,6 @@
 import type { Customer, Plan } from "@prisma/client";
 import type { CustomerInfo } from "../../../shared/api";
-import type { Tx } from "../db";
+import { noValue, type Tx } from "../db";
 import { planStatus } from "./entitlement";
 import { usernameCandidate } from "./ids";
 import { DAY_MS } from "./time";
@@ -47,7 +47,7 @@ export async function claimVisitorFlipbooks(
   now: Date
 ): Promise<number> {
   const books = await tx.flipbook.findMany({
-    where: { visitorId, customerId: null, filesDeleted: false },
+    where: { visitorId, filesDeleted: false, ...noValue("customerId") },
     select: { id: true },
   });
   if (books.length === 0) return 0;

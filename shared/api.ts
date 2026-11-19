@@ -3,7 +3,7 @@
 export type PlanType = "subscription" | "instant";
 
 export type PublicPlan = {
-  id: number;
+  id: string;
   code: string;
   name: string;
   tagline: string;
@@ -31,7 +31,7 @@ export type PublicConfig = {
 export type PlanStatus = "active" | "expired" | "none";
 
 export type CustomerInfo = {
-  id: number;
+  id: string;
   username: string;
   name: string;
   whatsapp: string;

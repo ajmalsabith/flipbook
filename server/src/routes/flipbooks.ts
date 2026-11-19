@@ -5,7 +5,7 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import type { DenyReason } from "../../../shared/api";
-import { prisma } from "../db";
+import { noValue, prisma } from "../db";
 import { env } from "../env";
 import { badRequest, HttpError, notFound } from "../http/errors";
 import { limits } from "../http/security";
@@ -107,7 +107,7 @@ flipbooksRouter.post("/", limits.upload, async (req, res) => {
 flipbooksRouter.get("/", async (req, res) => {
   const where = req.customer
     ? { customerId: req.customer.id }
-    : { visitorId: req.visitorId, customerId: null, filesDeleted: false };
+    : { visitorId: req.visitorId, filesDeleted: false, ...noValue("customerId") };
   const books = await prisma.flipbook.findMany({ where, orderBy: { createdAt: "desc" }, take: 200 });
   const now = new Date();
   res.setHeader("Cache-Control", "no-store");

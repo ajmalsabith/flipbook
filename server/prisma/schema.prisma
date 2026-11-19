@@ -1,18 +1,24 @@
-// AM Flipbook database. SQLite today; every column type used here also exists
-// in MySQL, so moving later means changing `provider` and re-running migrate.
+// AM Flipbook database: MongoDB (Atlas) through Prisma.
 // "Enum" columns are plain strings validated with zod in the server.
+//
+// MongoDB has no migrations: `npm run db:migrate` runs `prisma db push`,
+// which creates the collections and indexes below and is safe to re-run.
+//
+// Note for queries: in MongoDB an optional field can be null OR missing.
+// Prisma's `{ field: null }` matches only stored nulls, so code that filters
+// on "no value" uses `isNull("field")` from src/db.ts, which matches both.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
 model Admin {
-  id           Int        @id @default(autoincrement())
+  id           String     @id @default(auto()) @map("_id") @db.ObjectId
   username     String     @unique
   passwordHash String
   /// Bumped on password change so older sessions stop working.
@@ -25,14 +31,14 @@ model Admin {
 }
 
 model Customer {
-  id               Int        @id @default(autoincrement())
+  id               String     @id @default(auto()) @map("_id") @db.ObjectId
   username         String     @unique
   passwordHash     String
   name             String
   /// Digits only, with country code, e.g. 919876543210
   whatsapp         String
   email            String?
-  planId           Int?
+  planId           String?    @db.ObjectId
   plan             Plan?      @relation(fields: [planId], references: [id])
   /// Snapshot of the plan terms at approval time, so editing a plan later
   /// does not change what an existing customer paid for.
@@ -56,10 +62,11 @@ model Customer {
   downloads        DownloadEvent[]
 
   @@index([whatsapp])
+  @@index([planId])
 }
 
 model Plan {
-  id            Int        @id @default(autoincrement())
+  id            String     @id @default(auto()) @map("_id") @db.ObjectId
   /// Stable identifier used in URLs: instant | day | week | month
   code          String     @unique
   name          String
@@ -87,25 +94,25 @@ model Plan {
 /// approves it; a payment gateway would fill paymentMethod/paymentRef and
 /// approve through the same fulfilRequest() service.
 model Request {
-  id            Int           @id @default(autoincrement())
-  code          String        @unique
+  id            String         @id @default(auto()) @map("_id") @db.ObjectId
+  code          String         @unique
   /// new | renewal | instant
   kind          String
   /// pending | approved | rejected
-  status        String        @default("pending")
-  planId        Int
-  plan          Plan          @relation(fields: [planId], references: [id])
+  status        String         @default("pending")
+  planId        String         @db.ObjectId
+  plan          Plan           @relation(fields: [planId], references: [id])
   planName      String
   price         Int
   name          String
   whatsapp      String
   email         String?
-  customerId    Int?
-  customer      Customer?     @relation(fields: [customerId], references: [id])
+  customerId    String?        @db.ObjectId
+  customer      Customer?      @relation(fields: [customerId], references: [id])
   flipbookId    String?
-  flipbook      Flipbook?     @relation(fields: [flipbookId], references: [id], onDelete: SetNull)
+  flipbook      Flipbook?      @relation(fields: [flipbookId], references: [id], onDelete: SetNull)
   /// whatsapp_manual today; e.g. razorpay later
-  paymentMethod String        @default("whatsapp_manual")
+  paymentMethod String         @default("whatsapp_manual")
   /// UTR / transaction id
   paymentRef    String?
   note          String?
@@ -113,17 +120,22 @@ model Request {
   visitorId     String?
   ip            String?
   decidedAt     DateTime?
-  decidedById   Int?
-  decidedBy     Admin?        @relation(fields: [decidedById], references: [id])
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  decidedById   String?        @db.ObjectId
+  decidedBy     Admin?         @relation(fields: [decidedById], references: [id])
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   instantTokens InstantToken[]
 
   @@index([status, createdAt])
+  @@index([customerId])
+  @@index([flipbookId])
+  @@index([planId])
+  @@index([decidedById])
 }
 
 model Flipbook {
-  id            String          @id @default(cuid())
+  /// Our own random id (see services/ids.ts), also the uploads/<id>/ folder name.
+  id            String          @id @map("_id")
   slug          String          @unique
   title         String
   showCover     Boolean         @default(true)
@@ -139,7 +151,7 @@ model Flipbook {
   ogMarkedFile  String?
   /// Share link and preview use watermarked images
   watermarked   Boolean         @default(true)
-  customerId    Int?
+  customerId    String?         @db.ObjectId
   customer      Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
   visitorId     String?
   linkExpiresAt DateTime
@@ -159,10 +171,10 @@ model Flipbook {
 }
 
 model DownloadEvent {
-  id          Int       @id @default(autoincrement())
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
   flipbookId  String?
   flipbook    Flipbook? @relation(fields: [flipbookId], references: [id], onDelete: SetNull)
-  customerId  Int?
+  customerId  String?   @db.ObjectId
   customer    Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
   visitorId   String?
   ip          String?
@@ -174,12 +186,14 @@ model DownloadEvent {
   @@index([visitorId, kind])
   @@index([ip, createdAt])
   @@index([createdAt])
+  @@index([flipbookId])
+  @@index([customerId])
 }
 
 model InstantToken {
-  id         Int       @id @default(autoincrement())
+  id         String    @id @default(auto()) @map("_id") @db.ObjectId
   token      String    @unique
-  requestId  Int
+  requestId  String    @db.ObjectId
   request    Request   @relation(fields: [requestId], references: [id], onDelete: Cascade)
   flipbookId String
   flipbook   Flipbook  @relation(fields: [flipbookId], references: [id], onDelete: Cascade)
@@ -189,18 +203,21 @@ model InstantToken {
   usedAt     DateTime?
   usedIp     String?
   createdAt  DateTime  @default(now())
+
+  @@index([requestId])
+  @@index([flipbookId])
 }
 
 model Setting {
-  key       String   @id
+  key       String   @id @map("_id")
   /// JSON encoded
   value     String
   updatedAt DateTime @updatedAt
 }
 
 model AuditLog {
-  id         Int      @id @default(autoincrement())
-  adminId    Int?
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  adminId    String?  @db.ObjectId
   admin      Admin?   @relation(fields: [adminId], references: [id], onDelete: SetNull)
   actor      String
   action     String
@@ -211,4 +228,17 @@ model AuditLog {
   createdAt  DateTime @default(now())
 
   @@index([createdAt])
+  @@index([adminId])
+}
+
+/// Written inside a transaction to make two transactions on the same key
+/// collide (MongoDB then aborts one, and it is retried). Used so two free
+/// downloads at the same moment can never both take the last free slot.
+/// Old rows are removed by the daily job.
+model Lock {
+  key       String   @id @map("_id")
+  n         Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@index([updatedAt])
 }

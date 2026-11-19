@@ -13,17 +13,16 @@ function fromRoot(path: string): string {
   return isAbsolute(path) ? path : resolve(rootDir, path);
 }
 
-function databaseUrl(raw: string): string {
-  if (!raw.startsWith("file:")) return raw;
-  const [path, query] = raw.slice("file:".length).split("?");
-  const absolute = fromRoot(path);
-  mkdirSync(dirname(absolute), { recursive: true });
-  // One connection: SQLite allows a single writer anyway, and it makes every
-  // transaction (e.g. "check the download limit, then count the download")
-  // run strictly one after another.
-  const params = new URLSearchParams(query ?? "");
-  if (!params.has("connection_limit")) params.set("connection_limit", "1");
-  return `file:${absolute.replace(/\\/g, "/")}?${params.toString()}`;
+/** MongoDB connection string. The database name in it is the one used. */
+function databaseUrl(raw: string | undefined): string {
+  const url = (raw ?? "").trim();
+  if (!/^mongodb(\+srv)?:\/\/[^/]+\/[^/?]+/.test(url)) {
+    throw new Error(
+      "DATABASE_URL in .env must be a MongoDB connection string with a database name, " +
+        "e.g. mongodb+srv://user:password@cluster.example.mongodb.net/flipbook"
+    );
+  }
+  return url;
 }
 
 const nodeEnv = process.env.NODE_ENV ?? "development";
@@ -50,7 +49,7 @@ export const env = {
   trustProxy: Number(process.env.TRUST_PROXY ?? 1),
   jwtSecret: secret("JWT_SECRET"),
   cookieSecret: secret("COOKIE_SECRET"),
-  databaseUrl: databaseUrl(process.env.DATABASE_URL ?? "file:./data/amflipbook.db"),
+  databaseUrl: databaseUrl(process.env.DATABASE_URL),
   uploadDir: fromRoot(process.env.UPLOAD_DIR ?? "./uploads"),
   backupDir: fromRoot(process.env.BACKUP_DIR ?? "./backups"),
   webDist: resolve(rootDir, "web/dist"),

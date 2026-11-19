@@ -1,9 +1,9 @@
-// Runs the Prisma CLI with the repository's root .env loaded and a relative
-// SQLite path ("file:./data/amflipbook.db") resolved against the repo root,
-// so the CLI and the server always use the same database file.
+// Runs the Prisma CLI with the repository's root .env loaded, so the CLI and
+// the server always use the same DATABASE_URL (values already set in the
+// environment win, which is how the tests point it at their own database).
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const serverDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -22,21 +22,19 @@ function loadEnvFile(file) {
 
 loadEnvFile(resolve(rootDir, ".env"));
 
-let url = process.env.DATABASE_URL || "file:./data/amflipbook.db";
-if (url.startsWith("file:")) {
-  const path = url.slice("file:".length);
-  const absolute = isAbsolute(path) ? path : resolve(rootDir, path);
-  mkdirSync(dirname(absolute), { recursive: true });
-  url = "file:" + absolute.replace(/\\/g, "/");
+const command = process.argv.slice(2);
+// `prisma generate` only reads the schema; everything else needs a database.
+if (command[0] !== "generate" && !/^mongodb(\+srv)?:\/\//.test(process.env.DATABASE_URL ?? "")) {
+  console.error("DATABASE_URL in .env must be a MongoDB connection string (mongodb+srv://...).");
+  process.exit(1);
 }
-process.env.DATABASE_URL = url;
 
 const cli = resolve(serverDir, "node_modules/prisma/build/index.js");
 const fallback = resolve(rootDir, "node_modules/prisma/build/index.js");
 const entry = existsSync(cli) ? cli : fallback;
 const result = spawnSync(
   process.execPath,
-  [entry, ...process.argv.slice(2), "--schema", resolve(serverDir, "prisma/schema.prisma")],
+  [entry, ...command, "--schema", resolve(serverDir, "prisma/schema.prisma")],
   { stdio: "inherit", cwd: serverDir, env: process.env }
 );
 process.exit(result.status ?? 1);

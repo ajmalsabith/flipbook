@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import { readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { prisma } from "./db";
+import { hasValue, noValue, prisma } from "./db";
 import { env } from "./env";
 import { deleteFlipbookFiles } from "./services/flipbooks";
 import { DAY_MS } from "./services/time";
@@ -13,14 +13,14 @@ export async function runMaintenance(now = new Date()) {
   // 1. Plans that ran out. (Access checks use planExpiresAt directly, so this
   //    only keeps the status column and reports accurate.)
   const plans = await prisma.customer.updateMany({
-    where: { planStatus: "active", planExpiresAt: { lte: now } },
+    where: { planStatus: "active", AND: [hasValue("planExpiresAt"), { planExpiresAt: { lte: now } }] },
     data: { planStatus: "expired" },
   });
 
   // 2. Anonymous flipbooks: delete the files 2 days after the link expired.
   const stale = await prisma.flipbook.findMany({
     where: {
-      customerId: null,
+      ...noValue("customerId"),
       filesDeleted: false,
       linkExpiresAt: { lt: new Date(now.getTime() - ANONYMOUS_GRACE_MS) },
     },
@@ -37,7 +37,10 @@ export async function runMaintenance(now = new Date()) {
     data: { status: "expired" },
   });
 
-  // 4. Upload leftovers (interrupted uploads).
+  // 4. Download lock rows (see db.ts lock()) are only needed for a moment.
+  await prisma.lock.deleteMany({ where: { updatedAt: { lt: new Date(now.getTime() - 2 * DAY_MS) } } });
+
+  // 5. Upload leftovers (interrupted uploads).
   let tmpRemoved = 0;
   const tmpDir = join(env.uploadDir, ".tmp");
   for (const name of await readdir(tmpDir).catch(() => [] as string[])) {

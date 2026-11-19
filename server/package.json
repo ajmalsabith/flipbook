@@ -10,8 +10,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "postinstall": "node scripts/prisma.mjs generate",
-    "db:migrate": "node scripts/prisma.mjs migrate deploy",
-    "db:migrate:dev": "node scripts/prisma.mjs migrate dev",
+    "db:migrate": "node scripts/prisma.mjs db push --skip-generate",
     "db:seed": "tsx src/seed.ts",
     "admin:reset-password": "tsx src/seed.ts --reset-admin-password"
   },
@@ -39,6 +38,7 @@
     "@types/node-cron": "^3.0.11",
     "@types/supertest": "^6.0.3",
     "cross-env": "^10.0.0",
+    "mongodb-memory-server-core": "^11.3.0",
     "prisma": "6.19.3",
     "supertest": "^7.1.4",
     "tsup": "^8.5.0",

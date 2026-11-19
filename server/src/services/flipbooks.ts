@@ -112,7 +112,7 @@ export type CreateFlipbookInput = {
   pdfDownload: boolean;
   pages: UploadedFile[];
   pdf: UploadedFile | null;
-  owner: { customerId: number | null; visitorId: string | null };
+  owner: { customerId: string | null; visitorId: string | null };
   terms: { watermarked: boolean; linkExpiresAt: Date };
   settings: Settings;
 };

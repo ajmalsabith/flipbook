@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import type { Customer, Request } from "@prisma/client";
 import type { CustomerInfo, RequestKind, RequestStatusResponse } from "../../../shared/api";
 import { whatsappLink } from "../../../shared/phone";
-import { prisma } from "../db";
+import { noValue, prisma, transaction } from "../db";
 import { env } from "../env";
 import { badRequest, conflict, notFound } from "../http/errors";
 import { paymentProvider } from "../payments";
@@ -64,10 +64,12 @@ export async function createRequest(input: CreateRequestInput, now = new Date())
     where: {
       status: "pending",
       planId: plan.id,
-      flipbookId,
-      customerId: input.customer?.id ?? null,
       visitorId: input.visitorId,
       createdAt: { gte: new Date(now.getTime() - DAY_MS) },
+      AND: [
+        flipbookId ? { flipbookId } : noValue("flipbookId"),
+        input.customer ? { customerId: input.customer.id } : noValue("customerId"),
+      ],
     },
   });
   if (existing) {
@@ -132,7 +134,7 @@ export async function requestStatus(code: string): Promise<RequestStatusResponse
 }
 
 export type FulfilInput = {
-  planId: number;
+  planId: string;
   paymentRef?: string | null;
   note?: string | null;
   /** null = unlimited (ignored for instant requests) */
@@ -140,7 +142,7 @@ export type FulfilInput = {
   /** Plan length, or how long the one-time link works for instant requests */
   validityHours: number;
   /** Approve a "new" request onto an existing account instead of creating one. */
-  attachCustomerId?: number | null;
+  attachCustomerId?: string | null;
 };
 
 export type FulfilResult = {
@@ -164,7 +166,7 @@ export function instantLinkUrl(token: string): string {
  * same function.
  */
 export async function fulfilRequest(
-  requestId: number,
+  requestId: string,
   input: FulfilInput,
   actor: AuditActor,
   now = new Date()
@@ -173,7 +175,9 @@ export async function fulfilRequest(
   const password = generatePassword();
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-  return prisma.$transaction(async (tx) => {
+  // Two admins approving at once: one transaction is aborted, retried, and
+  // then sees the request is no longer pending.
+  return transaction(async (tx) => {
     const req = await tx.request.findUnique({ where: { id: requestId }, include: { flipbook: true } });
     if (!req) throw notFound("Request not found.");
     if (req.status !== "pending") throw conflict(`This request is already ${req.status}.`);
@@ -314,7 +318,7 @@ export async function fulfilRequest(
 }
 
 export async function rejectRequest(
-  requestId: number,
+  requestId: string,
   reason: string,
   actor: AuditActor,
   now = new Date()
@@ -333,12 +337,12 @@ export async function rejectRequest(
 
 /** New one-time link for an approved instant request (the old ones stop working). */
 export async function reissueInstantLink(
-  requestId: number,
+  requestId: string,
   validityHours: number,
   actor: AuditActor,
   now = new Date()
 ) {
-  return prisma.$transaction(async (tx) => {
+  return transaction(async (tx) => {
     const req = await tx.request.findUnique({ where: { id: requestId }, include: { flipbook: true } });
     if (!req || req.kind !== "instant") throw notFound("Instant request not found.");
     if (req.status !== "approved") throw conflict("Approve the request first.");

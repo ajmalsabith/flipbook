@@ -8,7 +8,8 @@ Live site: <https://amflipbook.amcloth.com>
 
 - **One Node.js process** serves the API (`/api/*`), the React app, share links
   (`/v/<slug>`), one-time downloads (`/d/<token>`) and uploaded files.
-- **One SQLite database** through Prisma (can move to MySQL later).
+- **One MongoDB database** (Atlas) through Prisma. Uploaded page images stay
+  on the server's disk in `uploads/`.
 - **No payment gateway**, no email, no queues. The payment code is structured so
   a gateway such as Razorpay can be added later (see [Payments](#payments)).
 
@@ -40,7 +41,7 @@ Live site: <https://amflipbook.amcloth.com>
 │   ├── api.ts, adminApi.ts JSON types shared by server and web
 │   └── phone.ts, format.ts WhatsApp numbers, ₹ and date formatting (Indian time)
 ├── server/                 Express + Prisma (TypeScript, bundled with tsup)
-│   ├── prisma/             schema.prisma and migrations
+│   ├── prisma/             schema.prisma (MongoDB collections and indexes)
 │   ├── src/routes/         public, flipbooks, requests, admin, pages (/v, /d)
 │   ├── src/services/       entitlement rules, downloads, requests, images (sharp)…
 │   ├── src/payments/       payment providers (WhatsApp manual today)
@@ -51,7 +52,7 @@ Live site: <https://amflipbook.amcloth.com>
 │   ├── public/brand/logo.svg   ← your logo
 │   └── src/maker/          PDF → page images in the browser (pdf.js)
 ├── deploy/                 PM2 and Nginx config
-└── scripts/backup.mjs      nightly SQLite + uploads backup
+└── scripts/backup.mjs      nightly MongoDB (mongodump) + uploads backup
 ```
 
 The flipbook viewer and PDF converter are ported from the Hightemp flipbook
@@ -72,7 +73,7 @@ Requirements: **Node.js 20.19+** (22 LTS recommended) and npm.
 ```bash
 npm install                 # installs both apps and generates the Prisma client
 cp .env.example .env        # then edit .env (see below)
-npm run db:migrate          # creates data/amflipbook.db
+npm run db:migrate          # creates the MongoDB collections and indexes
 npm run db:seed             # plans, settings, admin user, demo flipbook
 npm run dev                 # server on :4000, website on :5173
 ```
@@ -103,8 +104,7 @@ Run from the repository root.
 | `npm run dev` | Server (auto-restart) and website (hot reload) together |
 | `npm run build` | Builds the website (`web/dist`) and the server (`server/dist`) |
 | `npm start` | Production: one process serving API, website, share links and files |
-| `npm run db:migrate` | Applies database migrations (safe to run on every deploy) |
-| `npm run db:migrate:dev` | Creates a new migration after you edit `schema.prisma` |
+| `npm run db:migrate` | Creates/updates the MongoDB collections and indexes from `schema.prisma` (`prisma db push`; safe to run on every deploy) |
 | `npm run db:seed` | Adds default plans, settings, the first admin and the demo flipbook. Never overwrites your edits |
 | `npm run admin:reset-password` | Sets the admin password to `ADMIN_PASSWORD` from `.env` |
 | `npm test` | Entitlement unit tests and end-to-end API tests (uses a separate test database) |
@@ -124,7 +124,7 @@ All live in the root `.env` (copy from `.env.example`). **Never commit `.env`.**
 | `TRUST_PROXY` | `1` | Proxies in front of Node (Nginx = 1). Needed for real visitor IPs |
 | `JWT_SECRET` | random 48+ chars | Signs login sessions. Required in production |
 | `COOKIE_SECRET` | random 48+ chars | Signs the visitor cookie. Required in production |
-| `DATABASE_URL` | `file:./data/amflipbook.db` | SQLite file (relative to the repo root) |
+| `DATABASE_URL` | `mongodb+srv://USER:PASSWORD@cluster.mongodb.net/amflipbook?retryWrites=true&w=majority` | MongoDB connection string. The database name in it (`amflipbook`) is the one used. Secret |
 | `UPLOAD_DIR` | `./uploads` | Page images, PDFs and preview cards |
 | `BACKUP_DIR` | `./backups` | Where `npm run backup` writes |
 | `BACKUP_KEEP` | `14` | Number of backups to keep |
@@ -267,12 +267,17 @@ nano .env
 In `.env` set at least:
 ```
 PUBLIC_URL=https://amflipbook.amcloth.com
+DATABASE_URL=mongodb+srv://USER:PASSWORD@cluster.mongodb.net/amflipbook?retryWrites=true&w=majority
 JWT_SECRET=<random>
 COOKIE_SECRET=<random>
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=<strong password>
 ADMIN_WHATSAPP=91XXXXXXXXXX
 ```
+Then `chmod 600 .env` (it holds the database password).
+
+In MongoDB Atlas → **Network Access**, add the server's public IP, or the
+app cannot connect.
 
 ### 4. Build and start
 ```bash
@@ -306,16 +311,23 @@ npm run db:migrate
 pm2 reload amflipbook
 ```
 
-Keep **one** PM2 instance (SQLite, rate limits and the daily job expect a
-single process).
+Keep **one** PM2 instance (the in-memory rate limits and the daily job expect
+a single process).
 
 ---
 
 ## Backups
 
-`npm run backup` writes `BACKUP_DIR/<date-time>/amflipbook.db` (a consistent
-snapshot taken with `VACUUM INTO`, safe while the app runs) and
-`uploads.tar.gz`, and keeps the newest `BACKUP_KEEP` backups.
+`npm run backup` writes `BACKUP_DIR/<date-time>/database.archive.gz` (a
+`mongodump` of the database, safe while the app runs) and `uploads.tar.gz`,
+and keeps the newest `BACKUP_KEEP` backups. It needs MongoDB Database Tools
+on the server: download the Ubuntu `.deb` matching your Ubuntu version from
+<https://www.mongodb.com/try/download/database-tools>, then
+```bash
+sudo apt install -y ./mongodb-database-tools-*.deb
+```
+Paid Atlas tiers also keep their own cloud backups; this script covers the
+uploads too, which Atlas never sees.
 
 Nightly at 02:30 (`crontab -e`):
 ```
@@ -323,9 +335,9 @@ Nightly at 02:30 (`crontab -e`):
 ```
 Copy `backups/` off the server regularly (e.g. `rclone` to Google Drive or S3).
 
-**Restore:** `pm2 stop amflipbook`, copy the backup's `amflipbook.db` to
-`data/amflipbook.db`, extract `uploads.tar.gz` into the repo root, `pm2 start
-amflipbook`.
+**Restore:** `pm2 stop amflipbook`, then
+`mongorestore --uri="<DATABASE_URL>" --archive=database.archive.gz --gzip --drop --nsInclude="amflipbook.*"`,
+extract `uploads.tar.gz` into the repo root, `pm2 start amflipbook`.
 
 ---
 
@@ -335,11 +347,18 @@ amflipbook`.
 npm test
 ```
 
+By default the tests start a throwaway local MongoDB (the first run downloads
+it). To use a separate database on Atlas instead, set `TEST_DATABASE_URL` to
+the same connection string with the database name `amflipbook_test` (the name
+must end in `_test`: it is emptied on every run). Never point it at the live
+database.
+
 - `server/test/entitlement.test.ts` – the rules: free limit, per-IP cap,
   1-Day Pass limit, unlimited plans, expiry, renewal time, instant single-use
   link, share-link expiry.
 - `server/test/flows.test.ts` – the whole journey through the real API and a
-  throwaway SQLite database: watermarked free downloads → limit → WhatsApp
+  throwaway MongoDB database: watermarked free downloads → limit (also with
+  simultaneous clicks) → WhatsApp
   request → admin approval → login → clean downloads → plan limit → expiry →
   renewal → instant one-time link (works once) → share-link expiry → clean-up
   job → cross-site request blocking.
@@ -360,9 +379,7 @@ npm test
 - **WhatsApp preview not showing** – WhatsApp caches previews per URL; test
   with a new flipbook. The site must be reachable over HTTPS.
 
-### Moving to MySQL later
-Change `provider = "mysql"` in `server/prisma/schema.prisma`, set
-`DATABASE_URL=mysql://user:pass@host:3306/amflipbook`, delete
-`server/prisma/migrations`, run `npm run db:migrate:dev -- --name init`, and
-move the data (e.g. export with a small Prisma script). Use `mysqldump` for
-backups instead of `scripts/backup.mjs`.
+- **App does not start / "Server selection timeout"** – the server's IP is
+  not in Atlas → Network Access, or `DATABASE_URL` is wrong.
+- **Changed `schema.prisma`** – run `npm run db:migrate` (adds new indexes and
+  collections; MongoDB needs no migration files).

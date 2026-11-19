@@ -1,12 +1,12 @@
 import type { MeResponse } from "../../../shared/api";
-import { prisma, type Tx } from "../db";
+import { lock, prisma, transaction, type Tx } from "../db";
 import { decideDownload, type DownloadDecision } from "./entitlement";
 import { getSettings } from "./settings";
 import { startOfDayIST } from "./time";
 
 export type DownloadActor =
   | { kind: "visitor"; visitorId: string; ip: string }
-  | { kind: "customer"; customerId: number; ip: string };
+  | { kind: "customer"; customerId: string; ip: string };
 
 async function freeCounts(tx: Tx | typeof prisma, visitorId: string, ip: string, now: Date) {
   const freeUsed = await tx.downloadEvent.count({ where: { visitorId, kind: "free" } });
@@ -36,18 +36,28 @@ async function decide(tx: Tx | typeof prisma, actor: DownloadActor, now: Date): 
   );
 }
 
-export type ChargedDownload = DownloadDecision & { eventId?: number };
+export type ChargedDownload = DownloadDecision & { eventId?: string };
 
 /**
  * Checks the allowance and records the download in ONE transaction, so two
  * downloads at the same moment can never both use the last free slot.
+ *
+ * MongoDB only aborts a transaction when another one wrote the SAME document,
+ * and two free downloads insert two different events. So a free download
+ * first writes a lock row for the visitor and one for the IP: two downloads
+ * by the same visitor (or IP) then collide, one is retried, and the retry
+ * counts the other's event. Customers collide on their own customer row.
  */
 export async function chargeDownload(
   actor: DownloadActor,
   flipbookId: string,
   now = new Date()
 ): Promise<ChargedDownload> {
-  return prisma.$transaction(async (tx) => {
+  return transaction(async (tx) => {
+    if (actor.kind === "visitor") {
+      await lock(tx, `free:visitor:${actor.visitorId}`);
+      await lock(tx, `free:ip:${actor.ip}`);
+    }
     const decision = await decide(tx, actor, now);
     if (!decision.allowed) return decision;
     if (actor.kind === "customer") {
@@ -72,8 +82,8 @@ export async function chargeDownload(
 }
 
 /** Gives the download back if building the file failed after charging. */
-export async function refundDownload(actor: DownloadActor, eventId: number, flipbookId: string) {
-  await prisma.$transaction(async (tx) => {
+export async function refundDownload(actor: DownloadActor, eventId: string, flipbookId: string) {
+  await transaction(async (tx) => {
     await tx.downloadEvent.delete({ where: { id: eventId } });
     await tx.flipbook.update({ where: { id: flipbookId }, data: { downloads: { decrement: 1 } } });
     if (actor.kind === "customer") {

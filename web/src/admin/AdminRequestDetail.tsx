@@ -183,7 +183,7 @@ function ApproveForm({ detail, onApproved }: { detail: AdminRequestDetail; onApp
         note: note || null,
         downloadsAllowed: instant || unlimited ? null : downloads,
         validityHours: hours,
-        attachCustomerId: attach === "new" ? null : Number(attach),
+        attachCustomerId: attach === "new" ? null : attach,
       });
       onApproved(res);
     } catch (err) {
@@ -200,7 +200,7 @@ function ApproveForm({ detail, onApproved }: { detail: AdminRequestDetail; onApp
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="label" htmlFor="ap-plan">Plan</label>
-          <select id="ap-plan" className="input" value={planId} onChange={(e) => setPlanId(Number(e.target.value))}>
+          <select id="ap-plan" className="input" value={planId} onChange={(e) => setPlanId(e.target.value)}>
             {plans.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name} · {formatINR(p.price)}
@@ -276,7 +276,7 @@ function ApproveForm({ detail, onApproved }: { detail: AdminRequestDetail; onApp
   );
 }
 
-function RejectForm({ id, onRejected }: { id: number; onRejected: (r: { whatsappUrl: string }) => void }) {
+function RejectForm({ id, onRejected }: { id: string; onRejected: (r: { whatsappUrl: string }) => void }) {
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

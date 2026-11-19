@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { prisma } from "../db";
+import { prisma, transaction } from "../db";
 import { env } from "../env";
 
 export const settingsSchema = z.object({
@@ -51,15 +51,15 @@ export async function getSettings(): Promise<Settings> {
 export async function saveSettings(values: Partial<Settings>): Promise<Settings> {
   const current = await getSettings();
   const next = settingsSchema.parse({ ...current, ...values });
-  await prisma.$transaction(
-    Object.entries(next).map(([key, value]) =>
-      prisma.setting.upsert({
+  await transaction(async (tx) => {
+    for (const [key, value] of Object.entries(next)) {
+      await tx.setting.upsert({
         where: { key },
         create: { key, value: JSON.stringify(value) },
         update: { value: JSON.stringify(value) },
-      })
-    )
-  );
+      });
+    }
+  });
   cache = next;
   return next;
 }

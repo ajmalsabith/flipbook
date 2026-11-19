@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import type { Customer, Plan, Prisma, Request as DbRequest } from "@prisma/client";
@@ -15,7 +15,7 @@ import type {
 } from "../../../shared/adminApi";
 import type { RequestKind, RequestStatus } from "../../../shared/api";
 import { normalizeWhatsapp, whatsappLink } from "../../../shared/phone";
-import { prisma } from "../db";
+import { hasValue, isObjectId, noValue, prisma } from "../db";
 import {
   adminActor,
   clientIp,
@@ -51,6 +51,20 @@ function pageOf(query: unknown): number {
 
 function str(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+/** The :id route parameter as a database id; anything else is a 404. */
+function idParam(req: Request, what: string): string {
+  const id = req.params.id;
+  if (!isObjectId(id)) throw notFound(`${what} not found.`);
+  return id;
+}
+
+const objectId = z.string().refine(isObjectId, "Invalid id.");
+
+/** Case-insensitive "contains" (SQLite's LIKE was; MongoDB's is not). */
+function like(q: string) {
+  return { contains: q, mode: "insensitive" as const };
 }
 
 function toPlan(p: Plan): AdminPlan {
@@ -191,8 +205,8 @@ adminRouter.get("/requests", async (req, res) => {
     ...(q
       ? {
           OR: [
-            { code: { contains: q.toUpperCase() } },
-            { name: { contains: q } },
+            { code: like(q) },
+            { name: like(q) },
             { whatsapp: { contains: q.replace(/\D/g, "") || q } },
           ],
         }
@@ -212,9 +226,8 @@ adminRouter.get("/requests", async (req, res) => {
 });
 
 adminRouter.get("/requests/:id", async (req, res) => {
-  const id = Number(req.params.id);
   const r = await prisma.request.findUnique({
-    where: { id: Number.isInteger(id) ? id : -1 },
+    where: { id: idParam(req, "Request") },
     include: {
       customer: { include: { plan: true } },
       flipbook: true,
@@ -258,31 +271,34 @@ adminRouter.get("/requests/:id", async (req, res) => {
 });
 
 const approveSchema = z.object({
-  planId: z.number().int().positive(),
+  planId: objectId,
   paymentRef: z.string().trim().max(100).optional().nullable(),
   note: z.string().trim().max(500).optional().nullable(),
   downloadsAllowed: z.number().int().min(1).max(100000).nullable(),
   validityHours: z.number().int().min(1).max(24 * 3650),
-  attachCustomerId: z.number().int().positive().optional().nullable(),
+  attachCustomerId: objectId.optional().nullable(),
 });
 
 adminRouter.post("/requests/:id/approve", async (req, res) => {
+  const id = idParam(req, "Request");
   const input = approveSchema.parse(req.body);
-  res.json(await fulfilRequest(Number(req.params.id), input, adminActor(req)));
+  res.json(await fulfilRequest(id, input, adminActor(req)));
 });
 
 adminRouter.post("/requests/:id/reject", async (req, res) => {
+  const id = idParam(req, "Request");
   const { reason } = z
     .object({ reason: z.string().trim().min(3, "Enter a reason.").max(300) })
     .parse(req.body);
-  res.json(await rejectRequest(Number(req.params.id), reason, adminActor(req)));
+  res.json(await rejectRequest(id, reason, adminActor(req)));
 });
 
 adminRouter.post("/requests/:id/reissue", async (req, res) => {
+  const id = idParam(req, "Request");
   const { validityHours } = z
     .object({ validityHours: z.number().int().min(1).max(24 * 30) })
     .parse(req.body);
-  res.json(await reissueInstantLink(Number(req.params.id), validityHours, adminActor(req)));
+  res.json(await reissueInstantLink(id, validityHours, adminActor(req)));
 });
 
 // ---- Customers -----------------------------------------------------------------
@@ -293,19 +309,21 @@ adminRouter.get("/customers", async (req, res) => {
   const status = str(req.query.status);
   const now = new Date();
   const where: Prisma.CustomerWhereInput = {
-    ...(status === "active" ? { disabled: false, planExpiresAt: { gt: now } } : {}),
-    ...(status === "expired" ? { planExpiresAt: { lte: now } } : {}),
-    ...(status === "disabled" ? { disabled: true } : {}),
-    ...(q
-      ? {
-          OR: [
-            { username: { contains: q.toLowerCase() } },
-            { name: { contains: q } },
-            { whatsapp: { contains: q.replace(/\D/g, "") || q } },
-            { email: { contains: q } },
-          ],
-        }
-      : {}),
+    AND: [
+      status === "active" ? { disabled: false, planExpiresAt: { gt: now } } : {},
+      status === "expired" ? { AND: [hasValue("planExpiresAt"), { planExpiresAt: { lte: now } }] } : {},
+      status === "disabled" ? { disabled: true } : {},
+      q
+        ? {
+            OR: [
+              { username: like(q) },
+              { name: like(q) },
+              { whatsapp: { contains: q.replace(/\D/g, "") || q } },
+              { email: like(q) },
+            ],
+          }
+        : {},
+    ],
   };
   const [items, total] = await Promise.all([
     prisma.customer.findMany({
@@ -321,7 +339,7 @@ adminRouter.get("/customers", async (req, res) => {
   res.json(body);
 });
 
-async function customerDetail(id: number): Promise<AdminCustomerDetail> {
+async function customerDetail(id: string): Promise<AdminCustomerDetail> {
   const c = await prisma.customer.findUnique({
     where: { id },
     include: {
@@ -342,7 +360,7 @@ async function customerDetail(id: number): Promise<AdminCustomerDetail> {
 }
 
 adminRouter.get("/customers/:id", async (req, res) => {
-  res.json(await customerDetail(Number(req.params.id)));
+  res.json(await customerDetail(idParam(req, "Customer")));
 });
 
 const customerPatch = z
@@ -361,7 +379,7 @@ const customerPatch = z
   .strict();
 
 adminRouter.patch("/customers/:id", async (req, res) => {
-  const id = Number(req.params.id);
+  const id = idParam(req, "Customer");
   const body = customerPatch.parse(req.body);
   const current = await prisma.customer.findUnique({ where: { id } });
   if (!current) throw notFound("Customer not found.");
@@ -393,7 +411,7 @@ adminRouter.patch("/customers/:id", async (req, res) => {
 });
 
 adminRouter.post("/customers/:id/extend", async (req, res) => {
-  const id = Number(req.params.id);
+  const id = idParam(req, "Customer");
   const { hours } = z.object({ hours: z.number().int().min(1).max(24 * 3650) }).parse(req.body);
   const current = await prisma.customer.findUnique({ where: { id } });
   if (!current) throw notFound("Customer not found.");
@@ -408,7 +426,7 @@ adminRouter.post("/customers/:id/extend", async (req, res) => {
 });
 
 adminRouter.post("/customers/:id/reset-password", async (req, res) => {
-  const id = Number(req.params.id);
+  const id = idParam(req, "Customer");
   const current = await prisma.customer.findUnique({ where: { id } });
   if (!current) throw notFound("Customer not found.");
   const password = generatePassword();
@@ -450,7 +468,7 @@ const planPatch = z
   .strict();
 
 adminRouter.patch("/plans/:id", async (req, res) => {
-  const id = Number(req.params.id);
+  const id = idParam(req, "Plan");
   const body = planPatch.parse(req.body);
   const plan = await prisma.plan.findUnique({ where: { id } });
   if (!plan) throw notFound("Plan not found.");
@@ -468,21 +486,23 @@ adminRouter.get("/flipbooks", async (req, res) => {
   const owner = str(req.query.owner);
   const now = new Date();
   const where: Prisma.FlipbookWhereInput = {
-    ...(status === "active" ? { disabled: false, filesDeleted: false, linkExpiresAt: { gt: now } } : {}),
-    ...(status === "expired" ? { filesDeleted: false, linkExpiresAt: { lte: now } } : {}),
-    ...(status === "disabled" ? { disabled: true } : {}),
-    ...(status === "deleted" ? { filesDeleted: true } : {}),
-    ...(owner === "anonymous" ? { customerId: null } : {}),
-    ...(owner === "customer" ? { customerId: { not: null } } : {}),
-    ...(q
-      ? {
-          OR: [
-            { title: { contains: q } },
-            { slug: { contains: q.toLowerCase() } },
-            { customer: { username: { contains: q.toLowerCase() } } },
-          ],
-        }
-      : {}),
+    AND: [
+      status === "active" ? { disabled: false, filesDeleted: false, linkExpiresAt: { gt: now } } : {},
+      status === "expired" ? { filesDeleted: false, linkExpiresAt: { lte: now } } : {},
+      status === "disabled" ? { disabled: true } : {},
+      status === "deleted" ? { filesDeleted: true } : {},
+      owner === "anonymous" ? noValue("customerId") : {},
+      owner === "customer" ? hasValue("customerId") : {},
+      q
+        ? {
+            OR: [
+              { title: like(q) },
+              { slug: like(q) },
+              { customer: { is: { username: like(q) } } },
+            ],
+          }
+        : {},
+    ],
   };
   const [items, total] = await Promise.all([
     prisma.flipbook.findMany({

@@ -17,7 +17,6 @@
     "test": "npm test -w server",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
     "db:migrate": "npm run db:migrate -w server",
-    "db:migrate:dev": "npm run db:migrate:dev -w server",
     "db:seed": "npm run db:seed -w server",
     "admin:reset-password": "npm run admin:reset-password -w server",
     "backup": "node scripts/backup.mjs"

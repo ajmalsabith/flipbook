@@ -1,7 +1,7 @@
 import type { CookieOptions, Request, RequestHandler, Response } from "express";
 import jwt from "jsonwebtoken";
 import type { Admin, Customer } from "@prisma/client";
-import { prisma } from "../db";
+import { isObjectId, prisma } from "../db";
 import { env } from "../env";
 import { randomToken } from "../services/ids";
 import { unauthorized } from "./errors";
@@ -36,9 +36,9 @@ function cookieOptions(maxAgeMs: number): CookieOptions {
 
 type SessionClaims = { typ: "customer" | "admin"; v: number; sub: string };
 
-function sign(typ: SessionClaims["typ"], id: number, version: number, ttlSeconds: number): string {
+function sign(typ: SessionClaims["typ"], id: string, version: number, ttlSeconds: number): string {
   return jwt.sign({ typ, v: version }, env.jwtSecret, {
-    subject: String(id),
+    subject: id,
     expiresIn: ttlSeconds,
     algorithm: "HS256",
   });
@@ -93,7 +93,9 @@ export const session: RequestHandler = async (req, res, next) => {
   req.admin = null;
   const customerClaims = verify(req.cookies?.[CUSTOMER_COOKIE], "customer");
   if (customerClaims) {
-    const customer = await prisma.customer.findUnique({ where: { id: Number(customerClaims.sub) } });
+    const customer = isObjectId(customerClaims.sub)
+      ? await prisma.customer.findUnique({ where: { id: customerClaims.sub } })
+      : null;
     if (customer && !customer.disabled && customer.tokenVersion === customerClaims.v) {
       req.customer = customer;
     } else {
@@ -102,7 +104,9 @@ export const session: RequestHandler = async (req, res, next) => {
   }
   const adminClaims = verify(req.cookies?.[ADMIN_COOKIE], "admin");
   if (adminClaims) {
-    const admin = await prisma.admin.findUnique({ where: { id: Number(adminClaims.sub) } });
+    const admin = isObjectId(adminClaims.sub)
+      ? await prisma.admin.findUnique({ where: { id: adminClaims.sub } })
+      : null;
     if (admin && admin.tokenVersion === adminClaims.v) req.admin = admin;
     else endAdminSession(res);
   }

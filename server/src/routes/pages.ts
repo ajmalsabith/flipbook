@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from "express";
 import type { Flipbook } from "@prisma/client";
 import { whatsappLink } from "../../../shared/phone";
-import { prisma } from "../db";
+import { noValue, prisma, transaction } from "../db";
 import { clientIp } from "../http/auth";
 import { allowEmbedding, limits } from "../http/security";
 import { instantTokenStatus, shareLinkStatus } from "../services/entitlement";
@@ -173,7 +173,7 @@ pagesRouter.get("/d/:token", limits.instant, async (req, res) => {
 
 pagesRouter.post("/d/:token", limits.instant, async (req, res) => {
   const now = new Date();
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await transaction(async (tx) => {
     const token = await tx.instantToken.findUnique({
       where: { token: String(req.params.token) },
       include: { flipbook: true },
@@ -183,7 +183,7 @@ pagesRouter.post("/d/:token", limits.instant, async (req, res) => {
     if (state !== "ok") return { problem: state };
     // Conditional update: only one request can ever win this.
     const claimed = await tx.instantToken.updateMany({
-      where: { id: token.id, status: "active", usedAt: null, expiresAt: { gt: now } },
+      where: { id: token.id, status: "active", expiresAt: { gt: now }, ...noValue("usedAt") },
       data: { status: "used", usedAt: now, usedIp: clientIp(req) },
     });
     if (claimed.count !== 1) return { problem: "used" as const };

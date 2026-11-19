@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import type { MeResponse, PublicConfig, PublicPlan } from "../../../shared/api";
 import { brandName } from "../../../shared/theme";
-import { prisma } from "../db";
+import { prisma, transaction } from "../db";
 import { env } from "../env";
 import {
   clientIp,
@@ -20,7 +20,7 @@ import { getSettings } from "../services/settings";
 export const publicRouter = Router();
 
 export function toPublicPlan(p: {
-  id: number;
+  id: string;
   code: string;
   name: string;
   tagline: string;
@@ -104,7 +104,7 @@ publicRouter.post("/auth/login", limits.login, async (req, res) => {
     throw new HttpError(403, "account_disabled", "This account is disabled. Please contact us on WhatsApp.");
   }
   const now = new Date();
-  await prisma.$transaction(async (tx) => {
+  await transaction(async (tx) => {
     await tx.customer.update({ where: { id: customer.id }, data: { lastLoginAt: now } });
     await claimVisitorFlipbooks(tx, req.visitorId, customer, now);
   });
