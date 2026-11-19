@@ -1,3 +1,4 @@
+import "../fonts"; // first: fonts for watermark text (see fonts.ts)
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import sharp from "sharp";
